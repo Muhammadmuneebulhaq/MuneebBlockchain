@@ -3,7 +3,9 @@ import { Search, Plus, Blocks, Activity, Hash, Clock, Database, ChevronDown, Che
 
 const BlockchainApp = () => {
   const [blockchain, setBlockchain] = useState(null);
-  const [transactions, setTransactions] = useState([{ from: '', to: '', amount: '', data: '' }]);
+  const [newTransaction, setNewTransaction] = useState({ from: '', to: '', amount: '', data: '' });
+  const [pendingTransactions, setPendingTransactions] = useState([]);
+  const [selectedTx, setSelectedTx] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -15,7 +17,14 @@ const BlockchainApp = () => {
 
   useEffect(() => {
     fetchBlockchain();
+    fetchPendingTransactions();
     fetchStatus();
+    const interval = setInterval(() => {
+      fetchBlockchain();
+      fetchPendingTransactions();
+      fetchStatus();
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchBlockchain = async () => {
@@ -25,6 +34,18 @@ const BlockchainApp = () => {
       setBlockchain(data);
     } catch (error) {
       console.error('Error fetching blockchain:', error);
+    }
+  };
+
+  const fetchPendingTransactions = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/pending`);
+      const data = await response.json();
+      // Ensure data is an array before setting the state
+      setPendingTransactions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching pending transactions:', error);
+      setPendingTransactions([]); // Set to empty array on error
     }
   };
 
@@ -38,45 +59,85 @@ const BlockchainApp = () => {
     }
   };
 
-  const addTransaction = () => {
-    if (transactions.some(tx => !tx.from.trim() || !tx.to.trim() || !tx.amount.trim() || !tx.data.trim())) {
-      alert('Please fill all fields in existing transactions before adding a new one.');
-      return;
-    }
-    setTransactions([...transactions, { from: '', to: '', amount: '', data: '' }]);
-  };
-
-  const updateTransaction = (index, field, value) => {
-    const updated = [...transactions];
-    updated[index][field] = value;
-    setTransactions(updated);
-  };
-
-  const mineBlock = async () => {
-    if (transactions.some(tx => !tx.from.trim() || !tx.to.trim() || !tx.amount.trim() || !tx.data.trim())) {
-      alert('Please fill all transaction fields');
+  const addTransaction = async () => {
+    if (!newTransaction.from.trim() || !newTransaction.to.trim() || !newTransaction.amount.toString().trim() || !newTransaction.data.trim()) {
+      alert('Please fill all fields for the new transaction.');
       return;
     }
 
-    setMining(true);
     try {
       const response = await fetch(`${API_BASE}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(transactions),
+        body: JSON.stringify([newTransaction]),
       });
 
       if (response.ok) {
-        const result = await response.json();
-        console.log('Block mined:', result);
-        setTransactions([{ from: '', to: '', amount: '', data: '' }]);
-        await fetchBlockchain();
+        setNewTransaction({ from: '', to: '', amount: '', data: '' });
+        await fetchPendingTransactions();
         await fetchStatus();
+      } else {
+        // Try to show error message returned by server
+        let errMsg = 'Failed to add transaction';
+        try {
+          const err = await response.json();
+          errMsg = err.error || err.message || JSON.stringify(err);
+        } catch (e) {
+          const txt = await response.text();
+          errMsg = txt || errMsg;
+        }
+        alert(errMsg);
+      }
+    } catch (error) {
+      console.error('Error adding transaction:', error);
+      alert('Error adding transaction: ' + error.message);
+    }
+  };
+
+  const mineBlock = async () => {
+    const selectedTxIDs = Array.from(selectedTx);
+    if (selectedTxIDs.length === 0) {
+      alert('Please select at least one transaction to mine.');
+      return;
+    }
+
+    setMining(true);
+    try {
+      const response = await fetch(`${API_BASE}/mine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(selectedTxIDs),
+      });
+
+      if (response.ok) {
+        try {
+          await response.json(); // read body (block info) if needed
+        } catch (_) {
+          // ignore parse errors for body
+        }
+        await fetchBlockchain();
+        await fetchPendingTransactions();
+        await fetchStatus();
+        setSelectedTx(new Set());
+      } else {
+        // defensive parsing of error response
+        let errMsg = 'Failed to mine block.';
+        try {
+          const errBody = await response.json();
+          errMsg = errBody.error || errBody.message || JSON.stringify(errBody);
+        } catch (e) {
+          const txt = await response.text();
+          errMsg = txt || errMsg;
+        }
+        alert('Failed to mine block. ' + errMsg);
       }
     } catch (error) {
       console.error('Error mining block:', error);
+      alert('Error mining block: ' + (error.message || error));
     } finally {
       setMining(false);
     }
@@ -92,30 +153,46 @@ const BlockchainApp = () => {
     try {
       const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`);
       const data = await response.json();
+      // Ensure data.results is an array before setting the state
       setSearchResults(data.results || []);
     } catch (error) {
       console.error('Error searching blockchain:', error);
+      setSearchResults([]); // Set to empty array on error
     } finally {
       setLoading(false);
     }
   };
 
   const toggleBlockExpansion = (index) => {
-    const newExpanded = new Set(expandedBlocks);
-    if (newExpanded.has(index)) {
-      newExpanded.delete(index);
-    } else {
-      newExpanded.add(index);
-    }
-    setExpandedBlocks(newExpanded);
+    setExpandedBlocks(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(index)) newExpanded.delete(index);
+      else newExpanded.add(index);
+      return newExpanded;
+    });
+  };
+
+  const toggleTransactionSelection = (txId) => {
+    if (!txId) return;
+    setSelectedTx(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(txId)) newSelection.delete(txId);
+      else newSelection.add(txId);
+      return newSelection;
+    });
   };
 
   const formatHash = (hash) => {
+    if (!hash || hash.length < 16) return hash || '';
     return `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}`;
   };
 
   const formatTimestamp = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleString();
+    try {
+      return new Date(timestamp * 1000).toLocaleString();
+    } catch {
+      return String(timestamp);
+    }
   };
 
   const BlockCard = ({ block, isSearchResult = false }) => {
@@ -177,12 +254,12 @@ const BlockchainApp = () => {
               <div className="space-y-3">
                 {block.transactions.map((tx, txIndex) => (
                   <div key={txIndex} className="bg-gray-50 p-3 rounded border">
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                       <div><strong>ID:</strong> {tx.id}</div>
                       <div><strong>Amount:</strong> {tx.amount}</div>
                       <div><strong>From:</strong> {tx.from}</div>
                       <div><strong>To:</strong> {tx.to}</div>
-                      <div className="col-span-2"><strong>Data:</strong> {tx.data}</div>
+                      <div className="sm:col-span-2"><strong>Data:</strong> {tx.data}</div>
                     </div>
                   </div>
                 ))}
@@ -233,67 +310,95 @@ const BlockchainApp = () => {
         <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
           <h2 className="text-2xl font-bold mb-4 flex items-center space-x-2">
             <Plus className="text-blue-600" />
-            <span>Add Transactions</span>
+            <span>Add New Transaction</span>
           </h2>
-          
-          <div className="space-y-4">
-            {transactions.map((tx, index) => (
-              <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold">Transaction #{index + 1}</h3>
-            
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    placeholder="From"
-                    value={tx.from}
-                    onChange={(e) => updateTransaction(index, 'from', e.target.value)}
-                    className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="To"
-                    value={tx.to}
-                    onChange={(e) => updateTransaction(index, 'to', e.target.value)}
-                    className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Amount"
-                    value={tx.amount}
-                    onChange={(e) => updateTransaction(index, 'amount', e.target.value)}
-                    className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Transaction Data"
-                    value={tx.data}
-                    onChange={(e) => updateTransaction(index, 'data', e.target.value)}
-                    className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input
+              type="text"
+              placeholder="From"
+              value={newTransaction.from}
+              onChange={(e) => setNewTransaction({ ...newTransaction, from: e.target.value })}
+              className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              placeholder="To"
+              value={newTransaction.to}
+              onChange={(e) => setNewTransaction({ ...newTransaction, to: e.target.value })}
+              className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              placeholder="Amount"
+              value={newTransaction.amount}
+              onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
+              className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              placeholder="Transaction Data"
+              value={newTransaction.data}
+              onChange={(e) => setNewTransaction({ ...newTransaction, data: e.target.value })}
+              className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
+          <button
+            onClick={addTransaction}
+            className="mt-6 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus size={16} />
+            <span>Add Transaction to Pending Pool</span>
+          </button>
+        </div>
 
-          <div className="flex space-x-4 mt-6">
-            <button
-              onClick={addTransaction}
-              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center space-x-2"
-            >
-              <Plus size={16} />
-              <span>Add Transaction</span>
-            </button>
+        {/* Mine Block from Pending Transactions */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <h2 className="text-2xl font-bold mb-4 flex items-center space-x-2">
+            <Zap className="text-purple-600" />
+            <span>Mine Block</span>
+          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Pending Transactions ({pendingTransactions.length})</h3>
             <button
               onClick={mineBlock}
-              disabled={mining}
+              disabled={mining || selectedTx.size === 0}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400 transition-colors flex items-center space-x-2"
             >
               <Zap size={16} />
-              <span>{mining ? 'Mining...' : 'Mine Block'}</span>
+              <span>{mining ? 'Mining...' : `Mine (${selectedTx.size}) Transactions`}</span>
             </button>
           </div>
+          
+          {/* Conditional rendering for pending transactions */}
+          {pendingTransactions && pendingTransactions.length > 0 ? (
+            <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
+              {pendingTransactions.map((tx) => (
+                <div
+                  key={tx.id || tx.ID || Math.random()}
+                  className={`border rounded-lg p-4 bg-gray-50 flex items-start space-x-3 transition-colors ${selectedTx.has(tx.id) ? 'border-blue-500 bg-blue-100' : 'border-gray-200'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedTx.has(tx.id)}
+                    onChange={() => toggleTransactionSelection(tx.id)}
+                    className="mt-1 h-5 w-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                  />
+                  <div className="flex-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <div><strong>From:</strong> {tx.from}</div>
+                      <div><strong>To:</strong> {tx.to}</div>
+                      <div><strong>Amount:</strong> {tx.amount}</div>
+                      <div className="md:col-span-2"><strong>Data:</strong> {tx.data}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500">
+              No pending transactions to mine.
+            </div>
+          )}
         </div>
 
         {/* Search */}
@@ -321,7 +426,8 @@ const BlockchainApp = () => {
             </button>
           </div>
 
-          {searchResults.length > 0 && (
+          {/* Conditional rendering for search results */}
+          {searchResults && searchResults.length > 0 && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-3">Search Results ({searchResults.length} blocks found)</h3>
               <div className="space-y-4">
@@ -340,7 +446,8 @@ const BlockchainApp = () => {
             <span>Complete Blockchain</span>
           </h2>
           
-          {blockchain && blockchain.blocks ? (
+          {/* Conditional rendering for blockchain blocks */}
+          {blockchain && blockchain.blocks && blockchain.blocks.length > 0 ? (
             <div className="space-y-6">
               {blockchain.blocks.map((block) => (
                 <BlockCard key={block.index} block={block} />

@@ -49,6 +49,7 @@ type Blockchain struct {
 }
 
 var blockchain Blockchain
+var pendingTransactions []Transaction // Global pool for pending transactions
 
 // NewMerkleNode creates a new Merkle tree node
 func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
@@ -227,36 +228,87 @@ func (bc *Blockchain) SearchBlockchain(query string) []Block {
 
 // API Handlers
 
-func getBlockchain(w http.ResponseWriter, r *http.Request) {
+// getPendingTransactions handler
+func getPendingTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(blockchain)
+	json.NewEncoder(w).Encode(pendingTransactions)
 }
 
+// addTransaction handler now adds to pending pool
 func addTransaction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var transactions []Transaction
 	if err := json.NewDecoder(r.Body).Decode(&transactions); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
 		return
 	}
 
-	// Add timestamp to transaction IDs to make them unique
-	timestamp := time.Now().Unix()
+	// Add timestamp and a unique ID to each transaction
 	for i := range transactions {
-		if transactions[i].ID == "" {
-			transactions[i].ID = fmt.Sprintf("tx_%d_%d", timestamp, i)
-		}
+		transactions[i].ID = fmt.Sprintf("tx_%d_%d", time.Now().UnixNano(), i)
+		pendingTransactions = append(pendingTransactions, transactions[i])
 	}
 
-	blockchain.AddBlock(transactions)
-
 	response := map[string]interface{}{
-		"message": "Block mined and added to blockchain",
-		"block":   blockchain.Blocks[len(blockchain.Blocks)-1],
+		"message":              "Transactions added to pending pool",
+		"pending_count":        len(pendingTransactions),
+		"pending_transactions": pendingTransactions,
 	}
 
 	json.NewEncoder(w).Encode(response)
+}
+
+// mineBlock handler now mines selected transactions
+func mineBlock(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var selectedIDs []string
+	if err := json.NewDecoder(r.Body).Decode(&selectedIDs); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON body, expecting an array of transaction IDs"})
+		return
+	}
+
+	var transactionsToMine []Transaction
+	var remainingTransactions []Transaction
+	minedIDs := make(map[string]bool)
+
+	// Select transactions based on IDs and remove them from the pending pool
+	for _, tx := range pendingTransactions {
+		found := false
+		for _, id := range selectedIDs {
+			if tx.ID == id {
+				transactionsToMine = append(transactionsToMine, tx)
+				minedIDs[id] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			remainingTransactions = append(remainingTransactions, tx)
+		}
+	}
+
+	if len(transactionsToMine) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "No valid transactions selected to mine"})
+		return
+	}
+
+	blockchain.AddBlock(transactionsToMine)
+	pendingTransactions = remainingTransactions // Update the pending pool
+
+	response := map[string]interface{}{
+		"message": "Block mined successfully",
+		"block":   blockchain.Blocks[len(blockchain.Blocks)-1],
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+func getBlockchain(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(blockchain)
 }
 
 func searchBlockchain(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +316,8 @@ func searchBlockchain(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		http.Error(w, "Query parameter 'q' is required", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Query parameter 'q' is required"})
 		return
 	}
 
@@ -280,9 +333,10 @@ func getBlockchainStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	status := map[string]interface{}{
-		"blocks":     len(blockchain.Blocks),
-		"difficulty": blockchain.Difficulty,
-		"is_valid":   blockchain.IsChainValid(),
+		"blocks":           len(blockchain.Blocks),
+		"difficulty":       blockchain.Difficulty,
+		"is_valid":         blockchain.IsChainValid(),
+		"pending_tx_count": len(pendingTransactions),
 	}
 
 	json.NewEncoder(w).Encode(status)
@@ -305,6 +359,8 @@ func main() {
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/blockchain", getBlockchain).Methods("GET")
 	api.HandleFunc("/transactions", addTransaction).Methods("POST")
+	api.HandleFunc("/mine", mineBlock).Methods("POST")
+	api.HandleFunc("/pending", getPendingTransactions).Methods("GET")
 	api.HandleFunc("/search", searchBlockchain).Methods("GET")
 	api.HandleFunc("/status", getBlockchainStatus).Methods("GET")
 
