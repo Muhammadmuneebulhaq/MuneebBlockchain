@@ -3,7 +3,7 @@ import { Search, Plus, Blocks, Activity, Hash, Clock, Database, ChevronDown, Che
 
 const BlockchainApp = () => {
   const [blockchain, setBlockchain] = useState(null);
-  const [newTransaction, setNewTransaction] = useState({ from: '', to: '', amount: '', data: '' });
+  const [newTransaction, setNewTransaction] = useState({ from: '', to: '', amount: '', data: '', gas_fee: '' });
   const [pendingTransactions, setPendingTransactions] = useState([]);
   const [selectedTx, setSelectedTx] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,10 +60,13 @@ const BlockchainApp = () => {
   };
 
   const addTransaction = async () => {
-    if (!newTransaction.from.trim() || !newTransaction.to.trim() || !newTransaction.amount.toString().trim() || !newTransaction.data.trim()) {
-      alert('Please fill all fields for the new transaction.');
-      return;
+    if (!newTransaction.from.trim() || !newTransaction.to.trim() || 
+    !newTransaction.amount.toString().trim() || !newTransaction.data.trim() || 
+    !newTransaction.gas_fee.toString().trim()) {
+    alert('Please fill all fields for the new transaction.');
+    return;
     }
+
 
     try {
       const response = await fetch(`${API_BASE}/transactions`, {
@@ -259,6 +262,7 @@ const BlockchainApp = () => {
                       <div><strong>Amount:</strong> {tx.amount}</div>
                       <div><strong>From:</strong> {tx.from}</div>
                       <div><strong>To:</strong> {tx.to}</div>
+                      <div><strong>Gas Fee:</strong> {tx.gas_fee}</div>
                       <div className="sm:col-span-2"><strong>Data:</strong> {tx.data}</div>
                     </div>
                   </div>
@@ -341,6 +345,14 @@ const BlockchainApp = () => {
               onChange={(e) => setNewTransaction({ ...newTransaction, data: e.target.value })}
               className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <input
+              type="text"
+              placeholder="Gas Fee"
+              value={newTransaction.gas_fee}
+              onChange={(e) => setNewTransaction({ ...newTransaction, gas_fee: e.target.value })}
+              className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
           </div>
           <button
             onClick={addTransaction}
@@ -388,6 +400,7 @@ const BlockchainApp = () => {
                       <div><strong>From:</strong> {tx.from}</div>
                       <div><strong>To:</strong> {tx.to}</div>
                       <div><strong>Amount:</strong> {tx.amount}</div>
+                      <div><strong>Gas Fee:</strong> {tx.gas_fee}</div>
                       <div className="md:col-span-2"><strong>Data:</strong> {tx.data}</div>
                     </div>
                   </div>

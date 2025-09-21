@@ -22,7 +22,9 @@ type Transaction struct {
 	To     string `json:"to"`
 	Amount string `json:"amount"`
 	Data   string `json:"data"`
+	GasFee string `json:"gas_fee"`
 }
+
 
 // MerkleNode represents a node in the Merkle tree
 type MerkleNode struct {
@@ -134,14 +136,16 @@ func (b *Block) MineBlock(difficulty int) {
 // CreateGenesisBlock creates the first block in the blockchain
 func CreateGenesisBlock() Block {
 	genesisTransactions := []Transaction{
-		{
-			ID:     "genesis",
-			From:   "system",
-			To:     "system",
-			Amount: "0",
-			Data:   "Genesis Block - Welcome to Muneeb's blockchain",
-		},
-	}
+	{
+		ID:     "genesis",
+		From:   "system",
+		To:     "system",
+		Amount: "0",
+		Data:   "Genesis Block - Welcome to Muneeb's blockchain",
+		GasFee: "0",
+	},
+}
+
 
 	merkleTree := NewMerkleTree(genesisTransactions)
 	merkleRoot := hex.EncodeToString(merkleTree.Data)
