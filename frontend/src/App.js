@@ -39,6 +39,10 @@ const BlockchainApp = () => {
   };
 
   const addTransaction = () => {
+    if (transactions.some(tx => !tx.from.trim() || !tx.to.trim() || !tx.amount.trim() || !tx.data.trim())) {
+      alert('Please fill all fields in existing transactions before adding a new one.');
+      return;
+    }
     setTransactions([...transactions, { from: '', to: '', amount: '', data: '' }]);
   };
 
@@ -49,7 +53,7 @@ const BlockchainApp = () => {
   };
 
   const mineBlock = async () => {
-    if (transactions.some(tx => !tx.from || !tx.to || !tx.data)) {
+    if (transactions.some(tx => !tx.from.trim() || !tx.to.trim() || !tx.amount.trim() || !tx.data.trim())) {
       alert('Please fill all transaction fields');
       return;
     }
