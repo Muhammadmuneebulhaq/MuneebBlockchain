@@ -66,6 +66,11 @@ const BlockchainApp = () => {
     alert('Please fill all fields for the new transaction.');
     return;
     }
+    const gas = Number(newTransaction.gas_fee);
+    if (isNaN(gas) || gas < 10 || gas > 100) {
+      alert('Gas fee must be between 10 and 100.');
+      return;
+    }
 
 
     try {
@@ -332,7 +337,7 @@ const BlockchainApp = () => {
               className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <input
-              type="text"
+              type="number"
               placeholder="Amount"
               value={newTransaction.amount}
               onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
@@ -346,9 +351,11 @@ const BlockchainApp = () => {
               className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <input
-              type="text"
-              placeholder="Gas Fee"
+              type="number"
+              placeholder="Gas Fee (10-100)"
               value={newTransaction.gas_fee}
+              min="10"
+              max="100"
               onChange={(e) => setNewTransaction({ ...newTransaction, gas_fee: e.target.value })}
               className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -356,10 +363,10 @@ const BlockchainApp = () => {
           </div>
           <button
             onClick={addTransaction}
-            className="mt-6 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center space-x-2"
+            className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-2"
           >
             <Plus size={16} />
-            <span>Add Transaction to Pending Pool</span>
+            <span>Add Transaction to Pool</span>
           </button>
         </div>
 
@@ -401,6 +408,7 @@ const BlockchainApp = () => {
                       <div><strong>To:</strong> {tx.to}</div>
                       <div><strong>Amount:</strong> {tx.amount}</div>
                       <div><strong>Gas Fee:</strong> {tx.gas_fee}</div>
+
                       <div className="md:col-span-2"><strong>Data:</strong> {tx.data}</div>
                     </div>
                   </div>

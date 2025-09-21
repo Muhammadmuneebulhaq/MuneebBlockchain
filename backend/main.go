@@ -17,13 +17,14 @@ import (
 
 // Transaction represents a transaction in the blockchain
 type Transaction struct {
-	ID     string `json:"id"`
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Amount string `json:"amount"`
-	Data   string `json:"data"`
-	GasFee string `json:"gas_fee"`
+	ID     string  `json:"id"`
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+	Amount float64 `json:"amount"`
+	Data   string  `json:"data"`
+	GasFee float64 `json:"gas_fee"`
 }
+
 
 
 // MerkleNode represents a node in the Merkle tree
@@ -140,9 +141,9 @@ func CreateGenesisBlock() Block {
 		ID:     "genesis",
 		From:   "system",
 		To:     "system",
-		Amount: "0",
+		Amount: 0,
 		Data:   "Genesis Block - Welcome to Muneeb's blockchain",
-		GasFee: "0",
+		GasFee: 0,
 	},
 }
 
@@ -214,9 +215,9 @@ func (bc *Blockchain) SearchBlockchain(query string) []Block {
 			if strings.Contains(strings.ToLower(tx.Data), query) ||
 				strings.Contains(strings.ToLower(tx.From), query) ||
 				strings.Contains(strings.ToLower(tx.To), query) ||
-				strings.Contains(strings.ToLower(tx.Amount), query) ||
 				strings.Contains(strings.ToLower(tx.ID), query) {
 				results = append(results, block)
+		
 				break
 			}
 		}
@@ -251,9 +252,15 @@ func addTransaction(w http.ResponseWriter, r *http.Request) {
 
 	// Add timestamp and a unique ID to each transaction
 	for i := range transactions {
-		transactions[i].ID = fmt.Sprintf("tx_%d_%d", time.Now().UnixNano(), i)
-		pendingTransactions = append(pendingTransactions, transactions[i])
+	if transactions[i].GasFee < 10 || transactions[i].GasFee > 100 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Gas fee must be between 10 and 100"})
+		return
 	}
+	transactions[i].ID = fmt.Sprintf("tx_%d_%d", time.Now().UnixNano(), i)
+	pendingTransactions = append(pendingTransactions, transactions[i])
+}
+
 
 	response := map[string]interface{}{
 		"message":              "Transactions added to pending pool",
